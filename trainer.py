@@ -149,39 +149,45 @@ class NERTrainer:
         for epoch in range(self.training_config.num_epochs):
             # 訓練階段
             train_loss = self._train_epoch(train_loader, optimizer)
-            
+
             # 驗證階段
             val_loss, val_f1, _, _ = self._evaluate(val_loader)
-            
+
             # 記錄當前 learning rate
             current_lr = optimizer.param_groups[0]["lr"]
-            
-            # 更新歷史
-            history["train_loss"].append(train_loss)
-            history["val_loss"].append(val_loss)
-            history["val_f1"].append(val_f1)
-            history["learning_rate"].append(current_lr)
-            
+
             print(f"Epoch {epoch + 1}/{self.training_config.num_epochs}")
             print(f"  Train Loss: {train_loss:.4f}")
             print(f"  Val Loss: {val_loss:.4f}, Val F1: {val_f1:.4f}")
             print(f"  Learning Rate: {current_lr:.2e}")
-            
-            # 更新 scheduler
-            scheduler.step(val_f1)
-            
+
             # 保存最佳模型
             if val_f1 > self.best_f1:
                 self.best_f1 = val_f1
                 self.best_model_state = self.model.state_dict().copy()
                 self._save_best_weight(val_f1)
                 print(f"  ✓ New best model saved (F1: {val_f1:.4f})")
-            
+
+            # 更新 scheduler（可能會降低 learning rate）
+            old_lr = optimizer.param_groups[0]["lr"]
+            scheduler.step(val_f1)
+            new_lr = optimizer.param_groups[0]["lr"]
+
+            # 如果 learning rate 有變化，顯示提示
+            if new_lr < old_lr:
+                print(f"  ⚠ Learning rate reduced: {old_lr:.2e} → {new_lr:.2e}")
+
+            # 更新歷史（記錄更新後的 learning rate）
+            history["train_loss"].append(train_loss)
+            history["val_loss"].append(val_loss)
+            history["val_f1"].append(val_f1)
+            history["learning_rate"].append(new_lr)
+
             # Early stopping 檢查
             if self.early_stopping(val_f1):
                 print(f"\nEarly stopping triggered at epoch {epoch + 1}")
                 break
-            
+
             print()
         
         # 載入最佳模型
@@ -311,14 +317,16 @@ class NERTrainer:
         self,
         texts: List[str],
         data_loader: DataLoader,
+        metadata: List[Dict] = None,
         max_errors: int = 20
     ) -> None:
         """
         印出預測錯誤的結果
-        
+
         Args:
             texts: 原始文本列表
             data_loader: 資料載入器
+            metadata: 元數據列表（包含日期等信息）
             max_errors: 最多顯示幾個錯誤
         """
         self.model.eval()
@@ -364,21 +372,35 @@ class NERTrainer:
                     
                     if has_error and len(errors) < max_errors:
                         text = texts[text_idx] if text_idx < len(texts) else "N/A"
+                        meta = metadata[text_idx] if metadata and text_idx < len(metadata) else {}
                         errors.append({
                             "text": text[:100] + "..." if len(text) > 100 else text,
-                            "errors": error_details
+                            "errors": error_details,
+                            "metadata": meta
                         })
-                    
+
                     text_idx += 1
         
+        # 按照日期排序錯誤
+        errors.sort(key=lambda x: x.get("metadata", {}).get("message_date") or "")
+
         # 印出錯誤
         for i, error in enumerate(errors, 1):
             print(f"\n錯誤 #{i}")
+
+            # 顯示日期信息
+            if error.get("metadata"):
+                meta = error["metadata"]
+                if meta.get("message_date"):
+                    print(f"訊息日期: {meta['message_date']}")
+                if meta.get("id"):
+                    print(f"ID: {meta['id']}")
+
             print(f"文本: {error['text']}")
             print("錯誤詳情:")
             for detail in error["errors"][:5]:  # 每個樣本最多顯示 5 個錯誤
                 print(f"  Token: '{detail['token']}' | 預測: {detail['predicted']} | 實際: {detail['actual']}")
-        
+
         print(f"\n總共發現 {len(errors)} 個含有錯誤的樣本")
     
     def save_model(self, path: str) -> None:

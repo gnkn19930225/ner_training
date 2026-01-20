@@ -13,6 +13,7 @@ class MongoConfig:
     collection_name: str
     enterprise_id: str
     annotation_source: str = "Manual"
+    message_collection_name: str = "Message"
 
 
 @dataclass
@@ -34,12 +35,12 @@ class TrainingConfig:
     random_seed: int = 42
     
     # Early stopping 設定
-    patience: int = 5
+    patience: int = 10  # 10代沒下降就結束訓練
     min_delta: float = 0.001
-    
+
     # Learning rate scheduler 設定
-    lr_scheduler_factor: float = 0.5
-    lr_scheduler_patience: int = 2
+    lr_scheduler_factor: float = 0.5  # Learning rate 減半
+    lr_scheduler_patience: int = 5  # 5代沒下降就降低 learning rate
     
     # 輸出設定
     output_dir: str = "./output"

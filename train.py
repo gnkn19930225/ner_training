@@ -43,17 +43,17 @@ def main():
     print("正在從 MongoDB 載入資料...")
     with MongoDataLoader() as loader:
         documents = loader.fetch_data()
-    
-    print(f"載入了 {len(documents)} 筆資料")
-    
-    if len(documents) == 0:
-        print("錯誤: 沒有找到符合條件的資料")
-        return
-    
-    # 解析 NER 資料
-    print("正在解析 NER 資料...")
-    texts, labels = parse_ner_data(documents)
-    print(f"解析完成，共 {len(texts)} 筆有效資料")
+
+        print(f"載入了 {len(documents)} 筆資料")
+
+        if len(documents) == 0:
+            print("錯誤: 沒有找到符合條件的資料")
+            return
+
+        # 解析 NER 資料
+        print("正在解析 NER 資料...")
+        texts, labels, metadata = parse_ner_data(documents, loader)
+        print(f"解析完成，共 {len(texts)} 筆有效資料")
     
     # 建立標籤映射
     label2id, id2label = build_label_mappings(labels)
@@ -65,9 +65,10 @@ def main():
     
     # 隨機切分訓練與測試資料
     print(f"\n正在切分資料 (測試集比例: {training_config.test_size})...")
-    train_texts, test_texts, train_labels, test_labels = train_test_split(
+    train_texts, test_texts, train_labels, test_labels, train_metadata, test_metadata = train_test_split(
         texts,
         labels,
+        metadata,
         test_size=training_config.test_size,
         random_state=training_config.random_seed
     )
@@ -123,7 +124,7 @@ def main():
     trainer.print_classification_report(test_loader)
     
     # 印出錯誤結果
-    trainer.print_errors(test_texts, test_loader)
+    trainer.print_errors(test_texts, test_loader, test_metadata)
     
     # 儲存模型
     if training_config.save_best_model:

@@ -2,6 +2,7 @@
 資料載入模組 - 負責從 MongoDB 獲取資料
 """
 import os
+import re
 from typing import List, Dict, Tuple, Any
 from datetime import datetime, timezone, timedelta
 from pymongo import MongoClient
@@ -9,6 +10,19 @@ from bson import ObjectId
 from dotenv import load_dotenv
 
 from config import MongoConfig
+
+
+def normalize_text_for_ner(text: str) -> str:
+    """
+    正規化文字，移除會造成標註偏移的 Unicode 字元
+
+    訓練和推論時都必須使用此函數，確保一致性。
+
+    處理: Variation Selectors (U+FE00-U+FE0F)
+    例如: ⚠️ = ⚠ + FE0F，移除後變成 ⚠
+    """
+    text = re.sub(r'[\uFE00-\uFE0F]', '', text)
+    return text
 
 
 class MongoDataLoader:
@@ -124,6 +138,9 @@ def parse_ner_data(documents: List[Dict], loader: MongoDataLoader = None) -> Tup
 
         if not text:
             continue
+
+        # 正規化文字，移除 variation selectors 避免標註偏移
+        text = normalize_text_for_ner(text)
 
         # 從 AnnotationData.CharacterTags 取得 BIO 標籤
         annotation_data = doc.get("AnnotationData", {})

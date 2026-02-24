@@ -9,3 +9,5 @@ python-dotenv
 seqeval==1.2.2
 tqdm
 numpy
+optimum[onnxruntime]==1.23.3
+onnx

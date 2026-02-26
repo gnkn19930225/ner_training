@@ -28,7 +28,7 @@ class TrainingConfig:
     """訓練設定"""
     batch_size: int = 16
     learning_rate: float = 2e-5
-    num_epochs: int = 50
+    num_epochs: int = 999
     warmup_ratio: float = 0.1
     weight_decay: float = 0.01
     test_size: float = 0.2
@@ -36,7 +36,7 @@ class TrainingConfig:
     
     # Early stopping 設定
     patience: int = 10  # 10代沒下降就結束訓練
-    min_delta: float = 0.001
+    min_delta: float = 0.0
 
     # Learning rate scheduler 設定
     lr_scheduler_factor: float = 0.5  # Learning rate 減半

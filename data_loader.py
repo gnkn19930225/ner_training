@@ -182,21 +182,19 @@ def parse_ner_data(documents: List[Dict], loader: MongoDataLoader = None) -> Tup
         # 必須在 char_labels 建立後才做，否則 variation selector 被移除後位置會偏移
         text, char_labels = normalize_text_and_labels(text, char_labels)
 
-        # 提取元數據 - 從 MergedMessageIds 獲取正確的日期
+        # 提取元數據 - 從 Message collection 獲取正確的日期
         message_date = None
         merged_message_ids = doc.get("MergedMessageIds", [])
 
         if merged_message_ids and loader:
-            # 取第一個 MergedMessageId 去查詢 Message collection
+            # 有 MergedMessageIds：取第一個去查詢 Message collection
             first_message_id = str(merged_message_ids[0])
             message_date = loader.get_message_date(first_message_id)
-
-        # 如果沒有找到日期，使用 CreatedAt 作為後備
-        if not message_date:
-            created_at = doc.get("CreatedAt")
-            if not created_at and doc.get("_id"):
-                created_at = doc.get("_id").generation_time
-            message_date = created_at.strftime("%Y%m%d") if created_at else None
+        elif loader:
+            # 沒有 MergedMessageIds：改用 MessageDetailId 查詢 Message collection
+            message_detail_id = doc.get("MessageDetailId")
+            if message_detail_id:
+                message_date = loader.get_message_date(message_detail_id)
 
         meta = {
             "id": str(doc.get("_id", "")),

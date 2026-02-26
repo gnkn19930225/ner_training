@@ -7,8 +7,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
+from dotenv import load_dotenv
 
-from config import ModelConfig, TrainingConfig
+from config import MongoConfig, ModelConfig, TrainingConfig
 from data_loader import MongoDataLoader, parse_ner_data
 from dataset import NERDataset, build_label_mappings
 from trainer import NERTrainer
@@ -39,21 +40,38 @@ def main():
     print(f"裝置: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
     print()
     
-    # 從 MongoDB 載入資料
+    # 載入環境變數，建立正式與測試 DB 設定
+    load_dotenv()
+    shared_kwargs = dict(
+        database_name=os.getenv("MONGO_DATABASE_NAME"),
+        collection_name=os.getenv("MONGO_COLLECTION_NAME"),
+        enterprise_id=os.getenv("MONGO_ENTERPRISE_ID"),
+        message_collection_name=os.getenv("MONGO_MESSAGE_COLLECTION_NAME", "Message"),
+    )
+    prod_config = MongoConfig(connection_string=os.getenv("MONGO_PROD_CONNECTION_STRING"), **shared_kwargs)
+    test_config = MongoConfig(connection_string=os.getenv("MONGO_CONNECTION_STRING"), **shared_kwargs)
+
+    # 從兩個 DB 載入資料並合併
     print("正在從 MongoDB 載入資料...")
-    with MongoDataLoader() as loader:
-        documents = loader.fetch_data()
+    all_texts, all_labels, all_metadata = [], [], []
 
-        print(f"載入了 {len(documents)} 筆資料")
+    for label, config in [("正式 DB", prod_config), ("測試 DB", test_config)]:
+        with MongoDataLoader(config) as loader:
+            documents = loader.fetch_data()
+            print(f"{label}: 載入了 {len(documents)} 筆資料")
+            if documents:
+                texts, labels, metadata = parse_ner_data(documents, loader)
+                all_texts.extend(texts)
+                all_labels.extend(labels)
+                all_metadata.extend(metadata)
+                print(f"{label}: 解析完成 {len(texts)} 筆有效資料")
 
-        if len(documents) == 0:
-            print("錯誤: 沒有找到符合條件的資料")
-            return
+    texts, labels, metadata = all_texts, all_labels, all_metadata
+    print(f"合計 {len(texts)} 筆有效資料")
 
-        # 解析 NER 資料
-        print("正在解析 NER 資料...")
-        texts, labels, metadata = parse_ner_data(documents, loader)
-        print(f"解析完成，共 {len(texts)} 筆有效資料")
+    if len(texts) == 0:
+        print("錯誤: 沒有找到符合條件的資料")
+        return
     
     # 建立標籤映射
     label2id, id2label = build_label_mappings(labels)

@@ -44,7 +44,11 @@ ENTERPRISE_ID=your_enterprise_id
 ### 執行訓練
 
 ```bash
+# 訓練
 python train.py
+
+# 導出 ONNX
+python export_onnx.py --weights ./output/weights/<權重檔名>.pt
 ```
 
 ### 訓練參數

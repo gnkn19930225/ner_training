@@ -12,11 +12,32 @@ from dotenv import load_dotenv
 from config import MongoConfig
 
 
+def normalize_text_and_labels(text: str, char_labels: List[str]) -> Tuple[str, List[str]]:
+    """
+    正規化文字並同步調整標籤，確保兩者位置對齊。
+
+    訓練時使用此函數（同時處理 text 和 char_labels）。
+    推論時使用 normalize_text_for_ner（僅處理 text）。
+
+    處理: Variation Selectors (U+FE00-U+FE0F)
+    例如: ⚠️ = ⚠ (U+26A0) + ️ (U+FE0F)，移除 FE0F 時同步移除其對應標籤，
+    避免後續字元位置偏移造成標籤錯位。
+    """
+    normalized_chars = []
+    normalized_labels = []
+    for i, char in enumerate(text):
+        if '\uFE00' <= char <= '\uFE0F':
+            continue  # 跳過 variation selector，同時捨棄該位置的標籤
+        normalized_chars.append(char)
+        normalized_labels.append(char_labels[i] if i < len(char_labels) else 'O')
+    return ''.join(normalized_chars), normalized_labels
+
+
 def normalize_text_for_ner(text: str) -> str:
     """
-    正規化文字，移除會造成標註偏移的 Unicode 字元
+    正規化文字，移除會造成標註偏移的 Unicode 字元。
 
-    訓練和推論時都必須使用此函數，確保一致性。
+    推論時使用此函數，必須與訓練時的正規化邏輯保持一致。
 
     處理: Variation Selectors (U+FE00-U+FE0F)
     例如: ⚠️ = ⚠ + FE0F，移除後變成 ⚠
@@ -139,27 +160,27 @@ def parse_ner_data(documents: List[Dict], loader: MongoDataLoader = None) -> Tup
         if not text:
             continue
 
-        # 正規化文字，移除 variation selectors 避免標註偏移
-        text = normalize_text_for_ner(text)
-
-        # 從 AnnotationData.CharacterTags 取得 BIO 標籤
+        # 從 AnnotationData.CharacterTags 取得 BIO 標籤 (基於原始文字位置)
         annotation_data = doc.get("AnnotationData", {})
         character_tags = annotation_data.get("CharacterTags", [])
 
         if not character_tags:
             continue
 
-        # 按照 CharPosition 排序並提取 BIOTag
+        # 按照 CharPosition 排序並提取 BIOTag (基於原始文字)
         sorted_tags = sorted(character_tags, key=lambda x: x.get("CharPosition", 0))
         char_labels = [tag.get("BIOTag", "O") for tag in sorted_tags]
 
-        # 確保標籤數量與文本長度一致
+        # 確保標籤數量與原始文本長度一致
         if len(char_labels) != len(text):
-            # 如果不一致，用 O 補齊或截斷
             if len(char_labels) < len(text):
                 char_labels.extend(["O"] * (len(text) - len(char_labels)))
             else:
                 char_labels = char_labels[:len(text)]
+
+        # 正規化文字並同步調整標籤，確保兩者位置對齊
+        # 必須在 char_labels 建立後才做，否則 variation selector 被移除後位置會偏移
+        text, char_labels = normalize_text_and_labels(text, char_labels)
 
         # 提取元數據 - 從 MergedMessageIds 獲取正確的日期
         message_date = None

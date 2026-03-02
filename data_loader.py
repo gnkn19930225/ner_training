@@ -196,6 +196,12 @@ def parse_ner_data(documents: List[Dict], loader: MongoDataLoader = None) -> Tup
             if message_detail_id:
                 message_date = loader.get_message_date(message_detail_id)
 
+        # Fallback：若仍無日期，直接用文件的 CreatedAt
+        if not message_date:
+            created_at = doc.get("CreatedAt")
+            if isinstance(created_at, datetime):
+                message_date = created_at.strftime("%Y%m%d")
+
         meta = {
             "id": str(doc.get("_id", "")),
             "message_date": message_date,

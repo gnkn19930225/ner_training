@@ -167,20 +167,21 @@ def parse_ner_data(documents: List[Dict], loader: MongoDataLoader = None) -> Tup
         if not character_tags:
             continue
 
-        # 按照 CharPosition 排序並提取 BIOTag (基於原始文字)
+        # 先正規化文字（移除 Variation Selectors），以匹配標註工具的顯示位置
+        # 標註工具將 ⬇️ 渲染為 1 個字元，因此 CharPosition 是基於「顯示位置」（正規化後的位置）
+        # 若先用原始文字建 char_labels 再正規化，FE0F 前後的標籤會錯位
+        text = normalize_text_for_ner(text)
+
+        # 按照 CharPosition 排序並提取 BIOTag（CharPosition 對應正規化文字的位置）
         sorted_tags = sorted(character_tags, key=lambda x: x.get("CharPosition", 0))
         char_labels = [tag.get("BIOTag", "O") for tag in sorted_tags]
 
-        # 確保標籤數量與原始文本長度一致
+        # 確保標籤數量與正規化文本長度一致
         if len(char_labels) != len(text):
             if len(char_labels) < len(text):
                 char_labels.extend(["O"] * (len(text) - len(char_labels)))
             else:
                 char_labels = char_labels[:len(text)]
-
-        # 正規化文字並同步調整標籤，確保兩者位置對齊
-        # 必須在 char_labels 建立後才做，否則 variation selector 被移除後位置會偏移
-        text, char_labels = normalize_text_and_labels(text, char_labels)
 
         # 提取元數據 - 從 Message collection 獲取正確的日期
         message_date = None

@@ -318,7 +318,7 @@ class NERTrainer:
         texts: List[str],
         data_loader: DataLoader,
         metadata: List[Dict] = None,
-        max_errors: int = 20
+        max_errors: int = 50
     ) -> None:
         """
         印出預測錯誤的結果

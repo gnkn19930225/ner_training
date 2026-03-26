@@ -30,7 +30,9 @@ def main():
 
     training_config = TrainingConfig()
     
-    # 設定隨機種子
+    # 每次產生不同的隨機種子，確保資料切分與模型初始化都不重複
+    training_config.random_seed = random.randint(0, 2**32 - 1)
+    print(f"隨機種子: {training_config.random_seed}  (可用此值重現本次訓練)")
     set_seed(training_config.random_seed)
     
     print("=" * 80)
@@ -40,34 +42,23 @@ def main():
     print(f"裝置: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
     print()
     
-    # 載入環境變數，建立正式與測試 DB 設定
+    # 載入環境變數，建立正式 DB 設定
     load_dotenv()
-    shared_kwargs = dict(
+    prod_config = MongoConfig(
+        connection_string=os.getenv("MONGO_PROD_CONNECTION_STRING"),
         database_name=os.getenv("MONGO_DATABASE_NAME"),
         collection_name=os.getenv("MONGO_COLLECTION_NAME"),
         enterprise_id=os.getenv("MONGO_ENTERPRISE_ID"),
         message_collection_name=os.getenv("MONGO_MESSAGE_COLLECTION_NAME", "Message"),
     )
-    prod_config = MongoConfig(connection_string=os.getenv("MONGO_PROD_CONNECTION_STRING"), **shared_kwargs)
-    test_config = MongoConfig(connection_string=os.getenv("MONGO_CONNECTION_STRING"), **shared_kwargs)
 
-    # 從兩個 DB 載入資料並合併
+    # 從正式 DB 載入資料
     print("正在從 MongoDB 載入資料...")
-    all_texts, all_labels, all_metadata = [], [], []
-
-    for label, config in [("正式 DB", prod_config), ("測試 DB", test_config)]:
-        with MongoDataLoader(config) as loader:
-            documents = loader.fetch_data()
-            print(f"{label}: 載入了 {len(documents)} 筆資料")
-            if documents:
-                texts, labels, metadata = parse_ner_data(documents, loader)
-                all_texts.extend(texts)
-                all_labels.extend(labels)
-                all_metadata.extend(metadata)
-                print(f"{label}: 解析完成 {len(texts)} 筆有效資料")
-
-    texts, labels, metadata = all_texts, all_labels, all_metadata
-    print(f"合計 {len(texts)} 筆有效資料")
+    with MongoDataLoader(prod_config) as loader:
+        documents = loader.fetch_data()
+        print(f"正式 DB: 載入了 {len(documents)} 筆資料")
+        texts, labels, metadata = parse_ner_data(documents, loader)
+        print(f"正式 DB: 解析完成 {len(texts)} 筆有效資料")
 
     if len(texts) == 0:
         print("錯誤: 沒有找到符合條件的資料")

@@ -62,6 +62,51 @@ def load_model_from_weights(
     return model, tokenizer
 
 
+def _fix_tokenizer_max_length(output_path: str, max_length: int = 512) -> None:
+    """修正 tokenizer 相關檔案中的 max_length 設定"""
+    # 1. 修正 tokenizer_config.json 的 model_max_length
+    config_path = os.path.join(output_path, "tokenizer_config.json")
+    if os.path.exists(config_path):
+        with open(config_path, encoding="utf-8") as f:
+            config_data = json.load(f)
+        if config_data.get("model_max_length", max_length) < max_length:
+            config_data["model_max_length"] = max_length
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+            print(f"已修正 tokenizer_config.json model_max_length → {max_length}")
+
+    # 2. 修正 tokenizer.json 的 truncation 與 padding
+    tokenizer_path = os.path.join(output_path, "tokenizer.json")
+    if os.path.exists(tokenizer_path):
+        with open(tokenizer_path, encoding="utf-8") as f:
+            tokenizer_data = json.load(f)
+        changed = False
+
+        # 修正 truncation.max_length
+        if tokenizer_data.get("truncation") and isinstance(tokenizer_data["truncation"], dict):
+            if tokenizer_data["truncation"].get("max_length", max_length) < max_length:
+                tokenizer_data["truncation"]["max_length"] = max_length
+                changed = True
+
+        # 修正 padding strategy（可能是 {"Fixed": 128} 或 {"Fixed": {"size": 128}}）
+        padding = tokenizer_data.get("padding")
+        if padding and isinstance(padding, dict):
+            strategy = padding.get("strategy")
+            if isinstance(strategy, dict) and "Fixed" in strategy:
+                fixed_val = strategy["Fixed"]
+                if isinstance(fixed_val, int) and fixed_val < max_length:
+                    tokenizer_data["padding"]["strategy"]["Fixed"] = max_length
+                    changed = True
+                elif isinstance(fixed_val, dict) and fixed_val.get("size", max_length) < max_length:
+                    tokenizer_data["padding"]["strategy"]["Fixed"]["size"] = max_length
+                    changed = True
+
+        if changed:
+            with open(tokenizer_path, "w", encoding="utf-8") as f:
+                json.dump(tokenizer_data, f, ensure_ascii=False, indent=2)
+            print(f"已修正 tokenizer.json max_length → {max_length}")
+
+
 def export_with_optimum(model_path: str, output_path: str) -> None:
     """使用 optimum 導出 ONNX（推薦方法）"""
     from optimum.onnxruntime import ORTModelForTokenClassification
@@ -267,6 +312,9 @@ def main():
             export_with_optimum(args.model_path, args.output_path)
         else:
             export_with_torch(args.model_path, args.output_path)
+
+    # 修正 tokenizer max_length
+    _fix_tokenizer_max_length(args.output_path, 512)
 
     # 驗證
     if args.verify:

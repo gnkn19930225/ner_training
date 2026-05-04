@@ -145,9 +145,10 @@ def main():
         sys.stdout = tee
         try:
             trainer.print_classification_report(test_loader)
-            trainer.print_errors(test_texts, test_loader, test_metadata)
         finally:
             sys.stdout = sys.__stdout__
+
+        trainer.print_errors(test_texts, test_loader, test_metadata, output_file=f)
     print(f"訓練結果已儲存至: {results_path}")
 
     # 儲存模型

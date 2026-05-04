@@ -318,24 +318,23 @@ class NERTrainer:
         texts: List[str],
         data_loader: DataLoader,
         metadata: List[Dict] = None,
-        max_errors: int = 50
+        output_file=None
     ) -> None:
         """
-        印出預測錯誤的結果
+        將預測錯誤的結果寫入檔案
 
         Args:
             texts: 原始文本列表
             data_loader: 資料載入器
             metadata: 元數據列表（包含日期等信息）
-            max_errors: 最多顯示幾個錯誤
+            output_file: 輸出檔案物件，若為 None 則輸出至 stdout
         """
+        import sys
+        out = output_file or sys.stdout
+
         self.model.eval()
         errors = []
         text_idx = 0
-
-        print("\n" + "=" * 80)
-        print("預測錯誤分析")
-        print("=" * 80)
 
         with torch.no_grad():
             for batch in data_loader:
@@ -370,7 +369,7 @@ class NERTrainer:
                                 "actual": self.id2label[l]
                             })
 
-                    if has_error and len(errors) < max_errors:
+                    if has_error:
                         text = texts[text_idx] if text_idx < len(texts) else "N/A"
                         meta = metadata[text_idx] if metadata and text_idx < len(metadata) else {}
                         errors.append({
@@ -384,24 +383,26 @@ class NERTrainer:
         # 按照日期排序錯誤
         errors.sort(key=lambda x: x.get("metadata", {}).get("message_date") or "")
 
-        # 印出錯誤
-        for i, error in enumerate(errors, 1):
-            print(f"\n錯誤 #{i}")
+        print("\n" + "=" * 80, file=out)
+        print("預測錯誤分析", file=out)
+        print("=" * 80, file=out)
 
-            # 顯示日期信息
+        for i, error in enumerate(errors, 1):
+            print(f"\n錯誤 #{i}", file=out)
+
             if error.get("metadata"):
                 meta = error["metadata"]
                 if meta.get("message_date"):
-                    print(f"訊息日期: {meta['message_date']}")
+                    print(f"訊息日期: {meta['message_date']}", file=out)
                 if meta.get("id"):
-                    print(f"ID: {meta['id']}")
+                    print(f"ID: {meta['id']}", file=out)
 
-            print(f"文本: {error['text']}")
-            print("錯誤詳情:")
-            for detail in error["errors"][:5]:  # 每個樣本最多顯示 5 個錯誤
-                print(f"  Token: '{detail['token']}' | 預測: {detail['predicted']} | 實際: {detail['actual']}")
+            print(f"文本: {error['text']}", file=out)
+            print("錯誤詳情:", file=out)
+            for detail in error["errors"]:
+                print(f"  Token: '{detail['token']}' | 預測: {detail['predicted']} | 實際: {detail['actual']}", file=out)
 
-        print(f"\n總共發現 {len(errors)} 個含有錯誤的樣本")
+        print(f"\n總共發現 {len(errors)} 個含有錯誤的樣本", file=out)
     
     def save_model(self, path: str) -> None:
         """儲存模型"""

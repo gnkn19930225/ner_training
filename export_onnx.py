@@ -10,6 +10,27 @@ import torch
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 
+def _patch_tokenizer_json(output_path: str, max_length: int = 512) -> None:
+    """直接修正 tokenizer.json 裡 Rust tokenizers 寫入的 truncation/padding 設定"""
+    path = os.path.join(output_path, "tokenizer.json")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    changed = False
+    if data.get("truncation") and data["truncation"].get("max_length", max_length) < max_length:
+        data["truncation"]["max_length"] = max_length
+        changed = True
+    if isinstance(data.get("padding", {}).get("strategy", {}).get("Fixed"), int):
+        if data["padding"]["strategy"]["Fixed"] < max_length:
+            data["padding"]["strategy"]["Fixed"] = max_length
+            changed = True
+    if changed:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"已修正 tokenizer.json truncation/padding → {max_length}")
+
+
 def load_model_from_weights(
     weights_path: str,
     config_path: str = None,
@@ -62,51 +83,6 @@ def load_model_from_weights(
     return model, tokenizer
 
 
-def _fix_tokenizer_max_length(output_path: str, max_length: int = 512) -> None:
-    """修正 tokenizer 相關檔案中的 max_length 設定"""
-    # 1. 修正 tokenizer_config.json 的 model_max_length
-    config_path = os.path.join(output_path, "tokenizer_config.json")
-    if os.path.exists(config_path):
-        with open(config_path, encoding="utf-8") as f:
-            config_data = json.load(f)
-        if config_data.get("model_max_length", max_length) < max_length:
-            config_data["model_max_length"] = max_length
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config_data, f, ensure_ascii=False, indent=2)
-            print(f"已修正 tokenizer_config.json model_max_length → {max_length}")
-
-    # 2. 修正 tokenizer.json 的 truncation 與 padding
-    tokenizer_path = os.path.join(output_path, "tokenizer.json")
-    if os.path.exists(tokenizer_path):
-        with open(tokenizer_path, encoding="utf-8") as f:
-            tokenizer_data = json.load(f)
-        changed = False
-
-        # 修正 truncation.max_length
-        if tokenizer_data.get("truncation") and isinstance(tokenizer_data["truncation"], dict):
-            if tokenizer_data["truncation"].get("max_length", max_length) < max_length:
-                tokenizer_data["truncation"]["max_length"] = max_length
-                changed = True
-
-        # 修正 padding strategy（可能是 {"Fixed": 128} 或 {"Fixed": {"size": 128}}）
-        padding = tokenizer_data.get("padding")
-        if padding and isinstance(padding, dict):
-            strategy = padding.get("strategy")
-            if isinstance(strategy, dict) and "Fixed" in strategy:
-                fixed_val = strategy["Fixed"]
-                if isinstance(fixed_val, int) and fixed_val < max_length:
-                    tokenizer_data["padding"]["strategy"]["Fixed"] = max_length
-                    changed = True
-                elif isinstance(fixed_val, dict) and fixed_val.get("size", max_length) < max_length:
-                    tokenizer_data["padding"]["strategy"]["Fixed"]["size"] = max_length
-                    changed = True
-
-        if changed:
-            with open(tokenizer_path, "w", encoding="utf-8") as f:
-                json.dump(tokenizer_data, f, ensure_ascii=False, indent=2)
-            print(f"已修正 tokenizer.json max_length → {max_length}")
-
-
 def export_with_optimum(model_path: str, output_path: str) -> None:
     """使用 optimum 導出 ONNX（推薦方法）"""
     from optimum.onnxruntime import ORTModelForTokenClassification
@@ -121,6 +97,13 @@ def export_with_optimum(model_path: str, output_path: str) -> None:
 
     # 儲存 ONNX 模型
     model.save_pretrained(output_path)
+
+    # 修正 tokenizer max_length（optimum 預設存 128）
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer.model_max_length = 512
+    tokenizer.save_pretrained(output_path)
+    _patch_tokenizer_json(output_path)
+
     print(f"ONNX 模型已儲存至: {output_path}")
     print(f"模型檔案: {output_path}/model.onnx")
 
@@ -166,7 +149,9 @@ def export_from_weights(
     )
 
     # 儲存 tokenizer 和 config
+    tokenizer.model_max_length = 512
     tokenizer.save_pretrained(output_path)
+    _patch_tokenizer_json(output_path)
     model.config.save_pretrained(output_path)
 
     print(f"ONNX 模型已儲存至: {onnx_path}")
@@ -214,7 +199,9 @@ def export_with_torch(model_path: str, output_path: str) -> None:
     )
 
     # 複製 tokenizer 相關檔案
+    tokenizer.model_max_length = 512
     tokenizer.save_pretrained(output_path)
+    _patch_tokenizer_json(output_path)
 
     # 複製模型設定
     model.config.save_pretrained(output_path)
@@ -279,7 +266,7 @@ def main():
         "--method",
         type=str,
         choices=["optimum", "torch"],
-        default="optimum",
+        default="torch",
         help="導出方法: optimum (推薦) 或 torch (預設: optimum)"
     )
     parser.add_argument(
@@ -312,9 +299,6 @@ def main():
             export_with_optimum(args.model_path, args.output_path)
         else:
             export_with_torch(args.model_path, args.output_path)
-
-    # 修正 tokenizer max_length
-    _fix_tokenizer_max_length(args.output_path, 512)
 
     # 驗證
     if args.verify:

@@ -2,6 +2,7 @@
 主訓練腳本
 """
 import os
+import sys
 import random
 import numpy as np
 import torch
@@ -129,12 +130,26 @@ def main():
     print("=" * 80)
     history = trainer.train(train_loader, test_loader)
     
-    # 印出分類報告
-    trainer.print_classification_report(test_loader)
-    
-    # 印出錯誤結果
-    trainer.print_errors(test_texts, test_loader, test_metadata)
-    
+    # 印出分類報告與錯誤分析，同時寫入 txt
+    results_path = os.path.join(training_config.output_dir, "results.txt")
+    os.makedirs(training_config.output_dir, exist_ok=True)
+    with open(results_path, "w", encoding="utf-8") as f:
+        def _tee_write(self, s):
+            try:
+                sys.__stdout__.write(s)
+            except UnicodeEncodeError:
+                sys.__stdout__.write(s.encode(sys.__stdout__.encoding, errors="replace").decode(sys.__stdout__.encoding))
+            f.write(s)
+
+        tee = type("Tee", (), {"write": _tee_write, "flush": lambda self: (sys.__stdout__.flush(), f.flush())})()
+        sys.stdout = tee
+        try:
+            trainer.print_classification_report(test_loader)
+            trainer.print_errors(test_texts, test_loader, test_metadata)
+        finally:
+            sys.stdout = sys.__stdout__
+    print(f"訓練結果已儲存至: {results_path}")
+
     # 儲存模型
     if training_config.save_best_model:
         trainer.save_model(training_config.output_dir)

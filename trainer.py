@@ -332,24 +332,24 @@ class NERTrainer:
         self.model.eval()
         errors = []
         text_idx = 0
-        
+
         print("\n" + "=" * 80)
         print("預測錯誤分析")
         print("=" * 80)
-        
+
         with torch.no_grad():
             for batch in data_loader:
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
-                
+
                 outputs = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask
                 )
-                
+
                 predictions = torch.argmax(outputs.logits, dim=-1)
-                
+
                 for pred, label, mask, ids in zip(
                     predictions.cpu().numpy(),
                     labels.cpu().numpy(),
@@ -358,9 +358,9 @@ class NERTrainer:
                 ):
                     has_error = False
                     error_details = []
-                    
+
                     tokens = self.tokenizer.convert_ids_to_tokens(ids)
-                    
+
                     for i, (p, l, m, token) in enumerate(zip(pred, label, mask, tokens)):
                         if m == 1 and l != -100 and p != l:
                             has_error = True
@@ -369,7 +369,7 @@ class NERTrainer:
                                 "predicted": self.id2label[p],
                                 "actual": self.id2label[l]
                             })
-                    
+
                     if has_error and len(errors) < max_errors:
                         text = texts[text_idx] if text_idx < len(texts) else "N/A"
                         meta = metadata[text_idx] if metadata and text_idx < len(metadata) else {}
@@ -380,7 +380,7 @@ class NERTrainer:
                         })
 
                     text_idx += 1
-        
+
         # 按照日期排序錯誤
         errors.sort(key=lambda x: x.get("metadata", {}).get("message_date") or "")
 
